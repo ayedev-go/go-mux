@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 
 	"./lib"
@@ -8,23 +9,36 @@ import (
 
 func main() {
 	http.HandleFunc("/", serverHandler)
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":8081", nil)
 }
 
-func helloView(ctx *lib.Context) {
-	ctx.Write([]byte("reached hello"))
+func homeView(ctx *lib.Context) {
+	ctx.Write([]byte("Homepage"))
+}
+
+func profileView(ctx *lib.Context) {
+	ctx.Write([]byte("User Profile"))
+}
+
+func errorView(ctx *lib.Context) {
+	ctx.Error(http.StatusInternalServerError, "Internal Server Error")
 }
 
 func serverHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := lib.NewContext(w, r)
 	ctx.AddPattern("id", "([0-9]+)")
 
-	rg := lib.NewRouter()
-	rg.AddRoute(ctx, "user/:id", helloView, nil)
-
+	rg := lib.NewRouter(ctx)
+	rg.AddRoute(ctx, "/", homeView, nil)
+	rg.AddRoute(ctx, "error", errorView, nil)
 	rg.SetErrorHandler(404, func(ctx *lib.Context) {
 		ctx.Write([]byte("404! Page not found"))
 	})
 
+	sub := rg.SubRouter(ctx, "user")
+	sub.AddRoute(ctx, ":id", profileView, nil)
+
+	fmt.Println(ctx.Method, ctx.Path)
+	ctx.SetResponder(rg)
 	rg.Handle(ctx)
 }

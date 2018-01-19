@@ -1,5 +1,7 @@
 package lib
 
+import "regexp"
+
 /*
 RequestHandler Object
 */
@@ -15,6 +17,14 @@ RequestMatcher Object
 */
 type RequestMatcher interface {
 	ID() string
+	Regex() *regexp.Regexp
 	Match(*Context) RequestMatcher
 	Handle(*Context)
+}
+
+/*
+Responder Object
+*/
+type Responder interface {
+	HandleError(*Context, int, string)
 }

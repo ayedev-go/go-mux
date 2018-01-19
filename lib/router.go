@@ -1,19 +1,29 @@
 package lib
 
+import (
+	"fmt"
+	"net/http"
+	"regexp"
+)
+
 /*
 Router Object
 */
 type Router struct {
 	id            string
-	prefix        string
+	path          string
 	matchers      []*RequestMatcher
 	methods       map[string][]string
 	errorHandlers map[int]RequestHandler
+	reg           *regexp.Regexp
 }
 
-func (rg *Router) init() {
+func (rg *Router) init(ctx *Context) {
 	rg.methods = map[string][]string{}
 	rg.errorHandlers = map[int]RequestHandler{}
+
+	params := ParseParams(rg.path)
+	rg.reg = MakePatternRegexp(ctx, rg.path, params)
 }
 
 /*
@@ -26,9 +36,14 @@ func (rg *Router) ID() string {
 /*
 SubRouter Function
 */
-func (rg *Router) SubRouter(prefix string) *Router {
-	sub := &Router{prefix: prefix, id: rg.id + "-" + prefix}
-	sub.init()
+func (rg *Router) SubRouter(ctx *Context, path string) *Router {
+	newPath := path
+	if len(rg.path) > 0 {
+		newPath = rg.path + "/" + newPath
+	}
+	sub := &Router{path: newPath, id: rg.id + "-" + path}
+	sub.init(ctx)
+	rg.AddMatcher(sub)
 	return sub
 }
 
@@ -42,14 +57,18 @@ func (rg *Router) SetErrorHandler(code int, handler RequestHandler) {
 /*
 AddRoute Function
 */
-func (rg *Router) AddRoute(ctx *Context, p string, hs RequestHandler, config RouteConfig, methods ...string) RequestMatcher {
+func (rg *Router) AddRoute(ctx *Context, path string, handler RequestHandler, config RouteConfig, methods ...string) RequestMatcher {
 	if config == nil {
 		config = RouteConfig{}
 	}
+	newPath := path
+	if len(rg.path) > 0 {
+		newPath = rg.path + "/" + newPath
+	}
 	r := &Route{
-		path:     p,
+		path:     newPath,
 		config:   config,
-		handlers: []RequestHandler{hs},
+		handlers: []RequestHandler{handler},
 	}
 	r.init(ctx)
 	rg.AddMatcher(r, methods...)
@@ -69,11 +88,12 @@ Match Function
 */
 func (rg *Router) Match(ctx *Context) RequestMatcher {
 	for _, matcher := range rg.matchers {
-		if rg.matchMethod(ctx, (*matcher).ID()) {
-			match := (*matcher).Match(ctx)
-			if match != nil {
+		match := (*matcher).Match(ctx)
+		if match != nil {
+			if rg.matchMethod(ctx, (*matcher).ID()) {
 				return match
 			}
+			rg.HandleError(ctx, http.StatusMethodNotAllowed, "Method not allowed")
 		}
 	}
 	return nil
@@ -83,14 +103,37 @@ func (rg *Router) Match(ctx *Context) RequestMatcher {
 Handle Function
 */
 func (rg *Router) Handle(ctx *Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered in f", r)
+		}
+	}()
+
 	match := rg.Match(ctx)
 	if match != nil {
 		match.Handle(ctx)
 	} else {
-		errorHandler, found := rg.errorHandlers[404]
-		if found {
-			errorHandler(ctx)
-		}
+		rg.HandleError(ctx, http.StatusNotFound, "Page not found")
+	}
+}
+
+/*
+Regex Function
+*/
+func (rg *Router) Regex() *regexp.Regexp {
+	return rg.reg
+}
+
+/*
+HandleError Function
+*/
+func (rg *Router) HandleError(ctx *Context, errorCode int, errorMsg string) {
+	errorHandler, found := rg.errorHandlers[errorCode]
+	ctx.Status(errorCode)
+	if found {
+		errorHandler(ctx)
+	} else {
+		ctx.Write([]byte(fmt.Sprintf("Error #%d => %s", errorCode, errorMsg)))
 	}
 }
 
@@ -112,8 +155,8 @@ func (rg *Router) matchMethod(ctx *Context, id string) bool {
 /*
 NewRouter Function
 */
-func NewRouter() *Router {
+func NewRouter(ctx *Context) *Router {
 	rg := &Router{id: "default-router"}
-	rg.init()
+	rg.init(ctx)
 	return rg
 }

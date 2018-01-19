@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
-	"strings"
 )
 
 /*
@@ -34,24 +33,8 @@ func (r *Route) init(ctx *Context) {
 		r.id = fmt.Sprintf("%s", randomNumber)
 	}
 
-	r.params = RouteParams{}
-	rg, rgError := regexp.Compile(":([a-z0-9_]+)")
-	if rgError == nil {
-		matches := rg.FindAllString(r.path, -1)
-		for _, match := range matches {
-			r.params.Add(match[1:], match)
-		}
-	}
-
-	rgText := r.path
-	for _, param := range r.params {
-		rgText = strings.Replace(rgText, param.dummy, ctx.Pattern(param.key, "([a-zA-Z0-9-_]+)"), -1)
-	}
-	rgText += "(.(json|xml))?"
-	rg2, rgError2 := regexp.Compile("^" + rgText + "$")
-	if rgError2 == nil {
-		r.reg = rg2
-	}
+	r.params = ParseParams(r.path)
+	r.reg = MakePatternRegexp(ctx, r.path, r.params, "json", "xml")
 }
 
 /*
@@ -89,6 +72,13 @@ func (r *Route) Handle(ctx *Context) {
 }
 
 /*
+Regex Function
+*/
+func (r *Route) Regex() *regexp.Regexp {
+	return r.reg
+}
+
+/*
 HasParam Function
 */
 func (r *Route) HasParam(key string) bool {
@@ -102,7 +92,6 @@ ParamValue Function
 func (r *Route) ParamValue(key string, fallback ...string) string {
 	param := r.params.FindParam(key)
 	if param != nil {
-		fmt.Println(param)
 		return param.Value()
 	}
 	if len(fallback) > 0 {
