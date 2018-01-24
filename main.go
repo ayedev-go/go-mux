@@ -2,43 +2,41 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
+	"strings"
 
 	"./lib"
 )
 
-func main() {
-	http.HandleFunc("/", serverHandler)
-	http.ListenAndServe(":8081", nil)
-}
-
 func homeView(ctx *lib.Context) {
-	ctx.Write([]byte("Homepage"))
+	ctx.WriteString("Homepage")
 }
 
 func profileView(ctx *lib.Context) {
-	ctx.Write([]byte("User Profile"))
+	ctx.WriteString("User Profile")
 }
 
 func errorView(ctx *lib.Context) {
 	ctx.Error(http.StatusInternalServerError, "Internal Server Error")
 }
 
-func serverHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := lib.NewContext(w, r)
-	ctx.AddPattern("id", "([0-9]+)")
+func main() {
+	router := lib.NewRouter()
+	router.Where("id", "([0-9]+)").AddFormat("json", "xml")
 
-	rg := lib.NewRouter(ctx)
-	rg.AddRoute(ctx, "/", homeView, nil)
-	rg.AddRoute(ctx, "error", errorView, nil)
-	rg.SetErrorHandler(404, func(ctx *lib.Context) {
-		ctx.Write([]byte("404! Page not found"))
-	})
+	router.GET("/", homeView).Name("home")
+	router.GET("error", errorView).Name("error")
 
-	sub := rg.SubRouter(ctx, "user")
-	sub.AddRoute(ctx, ":id", profileView, nil)
+	subRouter := router.SubRouter("user")
+	subRouter.GET(":id", profileView).Name("user_profile")
 
-	fmt.Println(ctx.Method, ctx.Path)
-	ctx.SetResponder(rg)
-	rg.Handle(ctx)
+	fmt.Println(strings.Join(router.Debug(), "\n"))
+	mux := http.NewServeMux()
+	mux.Handle("/", router)
+	err := http.ListenAndServe(":8080", mux)
+	//err := http.ListenAndServeTLS(":10443", "server.crt", "server.key", mux)
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
 }
